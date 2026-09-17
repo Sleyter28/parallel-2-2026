@@ -11,9 +11,6 @@
 #include <stdio.h>
 #include <errno.h>
 
-#include "../../../../../../../Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/sys/_endian.h"
-
-
 int nu_listen(unsigned short port, int backlog)
 {
     int file_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -55,12 +52,63 @@ int nu_listen(unsigned short port, int backlog)
 
 int nu_write_all(int file_descriptor, const void* buffer, size_t size)
 {
+    const char *p = buffer;
+    size_t sent = 0;
+
+    while (sent < size) {
+        ssize_t n = write(file_descriptor, p + sent, size - sent);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;          /* interrupted by a signal: retry */
+            perror("write");
+            return -1;
+        }
+        sent += (size_t)n;
+    }
+    return 0;
 }
 
 ssize_t nu_drain_request(int file_descriptor)
 {
+    char buffer[2048];
+    ssize_t n;
+
+    do {
+        n = read(file_descriptor, buffer, sizeof buffer);
+    } while (n < 0 && errno == EINTR);
+
+    if (n < 0)
+        perror("read");
+
+    return n;
 }
 
 int nu_send_response(int file_descriptor, unsigned long connection_id)
 {
+    char body[128];
+    char header[256];
+
+    int body_len = snprintf(body, sizeof body,
+                            "connection %lu handled\n", connection_id);
+    if (body_len < 0 || (size_t)body_len >= sizeof body) {
+        fprintf(stderr, "nu_send_response: body truncated\n");
+        return -1;
+    }
+
+    int header_len = snprintf(header, sizeof header,
+                              "HTTP/1.1 200 OK\r\n"
+                              "Content-Type: text/plain\r\n"
+                              "Content-Length: %d\r\n"
+                              "Connection: close\r\n"
+                              "\r\n",
+                              body_len);
+    if (header_len < 0 || (size_t)header_len >= sizeof header) {
+        fprintf(stderr, "nu_send_response: header truncated\n");
+        return -1;
+    }
+
+    if (nu_write_all(file_descriptor, header, (size_t)header_len) < 0)
+        return -1;
+
+    return nu_write_all(file_descriptor, body, (size_t)body_len);
 }
