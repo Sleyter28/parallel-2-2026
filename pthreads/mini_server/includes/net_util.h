@@ -5,6 +5,8 @@
 #ifndef MINI_SERVER_NET_UTIL_H
 #define MINI_SERVER_NET_UTIL_H
 
+#include <stddef.h>
+#include <sys/types.h>
 
 int nu_listen(unsigned short port, int backlog);
 
